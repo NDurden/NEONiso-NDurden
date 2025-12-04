@@ -41,7 +41,7 @@ rlog$info("Start ECSE H2O isotope correction from flow.isoH2o.cor.R")
 
 
 # check if require packages are installed 
-packReq <- c("NEONiso", "parsedate", "Hmisc", "neonUtilities", "dplyr", "tidyr")
+packReq <- c("NEONiso", "parsedate", "Hmisc", "neonUtilities", "dplyr", "tidyr", "lubridate")
 
 lapply(packReq, function(x) {
   tryCatch({rlog$debug(x)}, error=function(cond){print(x)})
@@ -272,6 +272,7 @@ if (nrow(inpTmp) == 0 || !any(valiTrue)){
   rlog$info("Fail to perform correction due to missing due to no available data during measuring period and/or validation period")
   rlog$info("Downloding the golden file...")
   # reference input files
+  #NEED TO UPDATE to the site that have isoH2o DATA
   eddy4R.base::def.dld.zip(Inp = list(Url = "https://storage.googleapis.com/neon-ec-goldfiles/EC-iso-cor/inpRefeIsoCor_20230831.zip", 
                                       Dir =  Para$Flow$DirTmp))
   nameFileTmp <- list.files(path = Para$Flow$DirTmp,
@@ -281,167 +282,135 @@ if (nrow(inpTmp) == 0 || !any(valiTrue)){
   rlog$info(nameFileTmp)
   
   #correcting data using Bowling_2003 method
-  rlog$info("Golden File: Correcting data using Bowling_2003 method")
-  outDataTmp01 <- NEONiso::calibrate_carbon(inname = nameFileTmp, site = "KONZ", method = "Bowling_2003", remove_known_bad_months = FALSE, calibration_half_width = 1, write_to_file = FALSE, avg = 6, min_nobs = 130)
-  #correcting data using Linear regression (linreg) method
-  rlog$info("Golden File: Correcting data using Linear regression method")
-  outDataTmp02 <- NEONiso::calibrate_carbon(inname = nameFileTmp, site= "KONZ" , method = "linreg", remove_known_bad_months = FALSE, calibration_half_width = 1, write_to_file = FALSE, avg = 6, min_nobs = 130)
+  rlog$info("Golden File: Correcting isoH2o data...")
+  ####################################################
+  #replace these once updating package with the update function#
+  source('~/eddy/docker/NEONiso-NDurden/R/reference_data_selection.R')
+  source('~/eddy/docker/NEONiso-NDurden/R/reference_data_regression.R')
+  source('~/eddy/docker/NEONiso-NDurden/R/calibrate_water.R')
+  outDataTmp01 <- calibrate_water(inname = nameFile, 
+                                  site = "CLBJ", 
+                                  calibration_half_width = 1,
+                                  filter_data = TRUE,
+                                  force_cal_to_beginning = FALSE,
+                                  force_cal_to_end = FALSE,
+                                  r2_thres = 0.95,
+                                  slope_tolerance = 9999,
+                                  correct_ref_data = TRUE,
+                                  write_to_file = FALSE)
   
   outData01 <- list()
-  outData02 <- list()
+
   #creating empty dataframe for each measurement level from the reference file
   for(j in varLvlTowr) {
-    for (k in names(outDataTmp01$ciso_subset_cal$`000_010_06m`)){
-      outData01$ciso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp01$ciso_subset_cal$`000_010_06m`[[k]]),
+    for (k in names(outDataTmp01$wiso_subset_cal$`000_010_09m`)){
+      outData01$wiso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp01$wiso_subset_cal$`000_010_09m`[[k]]),
                                                                nrow=0, 
-                                                               dimnames=list(NULL, names(outDataTmp01$ciso_subset_cal$`000_010_06m`[[k]]))))
-      outData02$ciso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp02$ciso_subset_cal$`000_010_06m`[[k]]),
-                                                               nrow=0, 
-                                                               dimnames=list(NULL, names(outDataTmp02$ciso_subset_cal$`000_010_06m`[[k]]))))
+                                                               dimnames=list(NULL, names(outDataTmp01$wiso_subset_cal$`000_010_09m`[[k]]))))
     }}
   #creating empty dataframe for each validation period from the reference file
   for(j in varLvlVali) {
-    for (k in names(outDataTmp01$ciso_subset_cal$co2High_06m)){
-      outData01$ciso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp01$ciso_subset_cal[[j]][[k]]),
+    for (k in names(outDataTmp01$wiso_subset_cal$h2oHigh_03m)){
+      outData01$wiso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp01$wiso_subset_cal[[j]][[k]]),
                                                                nrow=0, 
-                                                               dimnames=list(NULL, names(outDataTmp01$ciso_subset_cal[[j]][[k]]))))
-      outData02$ciso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp02$ciso_subset_cal[[j]][[k]]),
-                                                               nrow=0, 
-                                                               dimnames=list(NULL, names(outDataTmp02$ciso_subset_cal[[j]][[k]]))))
+                                                               dimnames=list(NULL, names(outDataTmp01$wiso_subset_cal[[j]][[k]]))))
     }}
   #add calibration data.frame
   outData01$cal_df <- outDataTmp01$cal_df
-  outData02$cal_df <- outDataTmp02$cal_df
   outData01$cal_df[1,] <- rep(NA, ncol(outData01$cal_df))
-  outData02$cal_df[1,] <- rep(NA, ncol(outData02$cal_df))
   
   #remove unused table
-  rm(outDataTmp01, outDataTmp02, nameFileTmp)
+  rm(outDataTmp01, nameFileTmp)
   
 } else {
   rlog$info("Starting data correction...")
   #correction processing
   #correcting data using Bowling_2003 method
-  rlog$info("Correcting data using Bowling_2003 method")
-  outData01 <- NEONiso::calibrate_carbon(inname = nameFile, site = Para$Flow$Loc, method = "Bowling_2003", remove_known_bad_months = FALSE, calibration_half_width = 1, write_to_file = FALSE, avg = 6, min_nobs = 130)
-  #if the modified calibrate_carbon() has not imported yet, run calibrate_carbon() line by line by using varibles setting at the end of this work flow
-  #Then run;
-  #outData01 <- outData
-  
-  
-  #correcting data using Linear regression (linreg) method
-  #NOTE: values of min, max output from linreg method are the corrected values not raw values
-  rlog$info("Correcting data using  Linear regression method")
-  outData02 <- NEONiso::calibrate_carbon(inname = nameFile, site=Para$Flow$Loc, method = "linreg", remove_known_bad_months = FALSE, calibration_half_width = 1, write_to_file = FALSE, avg = 6, min_nobs = 130)
-  #if the modified calibrate_carbon() has not imported yet, run calibrate_carbon() line by line by using varibles setting at the end of this work flow
-  #Then run;
-  #outData02 <- outData
+  rlog$info("Correcting isoH2o...")
+  outData01 <- calibrate_water(inname = nameFile, 
+                               site = Para$Flow$Loc, 
+                               calibration_half_width = 1,
+                               filter_data = TRUE,
+                               force_cal_to_beginning = FALSE,
+                               force_cal_to_end = FALSE,
+                               r2_thres = 0.95,
+                               slope_tolerance = 9999,
+                               correct_ref_data = TRUE,
+                               write_to_file = FALSE)
+
 }#end else
 rlog$info("Finished data correction...")
 #combine data from both method into one list
 outData <- list()
 
 #adding columns, combine results, clean up, organizing, and changing column names
-for(j in names(outData01$ciso_subset_cal)) {
-  for (k in names (outData01$ciso_subset_cal[[j]])){
+for(j in names(outData01$wiso_subset_cal)) {
+  for (k in names (outData01$wiso_subset_cal[[j]])){
+    #remove verticalPosition and varname column
+    outData01$wiso_subset_cal[[j]][[k]] <-  outData01$wiso_subset_cal[[j]][[k]][ , !(names( outData01$wiso_subset_cal[[j]][[k]]) %in% c("verticalPosition", "varname")) ]
+    #outData01$wiso_subset_cal[[j]][[k]] <- outData01$wiso_subset_cal[[j]][[k]] %>% select(-verticalPosition, -varname)
     #adding 1st column with NA when number of row = 0
-    #outData01$ciso_subset_cal
-    if(nrow(outData01$ciso_subset_cal[[j]][[k]]) == 0){
-      outData01$ciso_subset_cal[[j]][[k]][1,] <- rep(NA, ncol(outData01$ciso_subset_cal[[j]][[k]]))
+    #outData01$wiso_subset_cal
+    if(nrow(outData01$wiso_subset_cal[[j]][[k]]) == 0){
+      outData01$wiso_subset_cal[[j]][[k]][1,] <- rep(NA, ncol(outData01$wiso_subset_cal[[j]][[k]]))
     } else{
-      outData01$ciso_subset_cal[[j]][[k]] <- outData01$ciso_subset_cal[[j]][[k]]
+      outData01$wiso_subset_cal[[j]][[k]] <- outData01$wiso_subset_cal[[j]][[k]]
     }
     
-    #adding 1st column with NA when number of row = 0
-    #outData02$ciso_subset_cal
-    if(nrow(outData02$ciso_subset_cal[[j]][[k]]) == 0){
-      outData02$ciso_subset_cal[[j]][[k]][1,] <- rep(NA, ncol(outData02$ciso_subset_cal[[j]][[k]]))
-    } else{
-      outData02$ciso_subset_cal[[j]][[k]] <- outData02$ciso_subset_cal[[j]][[k]]
-    }
-    
-    if (k %in% c("dlta13CCo2", "rtioMoleDryCo2")){
+    if (k %in% c("dlta18OH2o", "dlta2HH2o")){
       
       ######BOOK KEEPING######################################
       #change column names to NEON terms
-      #original column names of outData01 (Bowling_2003 method)
-      #dlta13CCo2 = c("timeBgn","timeEnd","mean","min","max","vari","numSamp","mean_cal","min_cal","max_cal","CVcalUcrt","LOOcalUcrt")
-      #rtioMoleDryCo2 = c("timeBgn","timeEnd","mean","min","max","vari","numSamp","mean_cal","CVcalUcrt","LOOcalUcrt")
-      #colnames(outData01$ciso_subset_cal[[j]][[k]]) <- c("timeBgn","timeEnd","mean","min","max","vari","numSamp","meanCorBowl","minCorBowl","maxCorBowl","cvCalUcrt","looCalUcrt")
-      
-      #original column names of outData02 (linreg method)
-      #c("timeBgn","timeEnd","mean","min","max","vari","numSamp","mean_cal","cvloo", "cv5rmse", "cv5mae")
-      #NOTE: values of min, max output from linreg method are the corrected values not raw values
-      #replace column names of min & max to minCor and maxCor
-      #names(outData02$ciso_subset_cal[[j]][[k]]) <- c("timeBgn","timeEnd","mean","minCorLinReg","maxLinReg","vari","numSamp","meanCorLinReg","cvLoo","cv5Rmse","cv5Mae")
+      #original column names
+      #dlta18OH2o = c("timeBgn","timeEnd","mean","min","max","vari","numSamp","mean_cal","max_cal", "min_cal")
+      #dlta2HH20 = c("timeBgn","timeEnd","mean","min","max","vari","numSamp","mean_cal",max_cal", "min_cal")
+      #colnames(outData01$wiso_subset_cal[[j]][[k]]) <- c("timeBgn","timeEnd","mean","min","max","vari","numSamp","meanCor","minCor","maxCor")
       #######################################################
       
-      #adding min_cal and max_cal to rtioMoleDryCo2
-      if (k %in% c("rtioMoleDryCo2")) {
-        outData01$ciso_subset_cal[[j]][[k]]$min_cal <- NaN
-        outData01$ciso_subset_cal[[j]][[k]]$max_cal <- NaN
-      }
       #create temporary table to combine results from both methods in NEON format
       tmpData <- data.frame(
-        #provided best estimated (output from Bowling_2003 method)
-        mean = outData01$ciso_subset_cal[[j]][[k]]$mean_cal,
-        min = outData01$ciso_subset_cal[[j]][[k]]$min_cal,
-        max = outData01$ciso_subset_cal[[j]][[k]]$max_cal,
+        #provided best estimated; replace raw data with the correction
+        mean = outData01$wiso_subset_cal[[j]][[k]]$mean_cal,
+        min = outData01$wiso_subset_cal[[j]][[k]]$min_cal,
+        max = outData01$wiso_subset_cal[[j]][[k]]$max_cal,
         vari = NaN, #vari not calculate after applying calibration (should talk to Rich)
-        numSamp = outData01$ciso_subset_cal[[j]][[k]]$numSamp,
-        #output from Bowling_2003 method
-        meanCorBowl = outData01$ciso_subset_cal[[j]][[k]]$mean_cal,
-        minCorBowl = outData01$ciso_subset_cal[[j]][[k]]$min_cal,
-        maxCorBowl = outData01$ciso_subset_cal[[j]][[k]]$max_cal,
-        cvCalUcrt =outData01$ciso_subset_cal[[j]][[k]]$CVcalUcrt,
-        looCalUcrt =outData01$ciso_subset_cal[[j]][[k]]$LOOcalUcrt,
-        #output from linreg
-        meanCorLinReg = outData02$ciso_subset_cal[[j]][[k]]$mean_cal,
-        minCorLinReg =  outData02$ciso_subset_cal[[j]][[k]]$min, #min, max output from linreg method are the corrected values not raw values
-        maxCorLinReg =  outData02$ciso_subset_cal[[j]][[k]]$max,
-        cvLoo = outData02$ciso_subset_cal[[j]][[k]]$cvloo,
-        cv5Rmse = outData02$ciso_subset_cal[[j]][[k]]$cv5rmse,
-        cv5Mae = outData02$ciso_subset_cal[[j]][[k]]$cv5mae,
+        numSamp = outData01$wiso_subset_cal[[j]][[k]]$numSamp,
+        #correction data
+        meanCor = outData01$wiso_subset_cal[[j]][[k]]$mean_cal,
+        minCor = outData01$wiso_subset_cal[[j]][[k]]$min_cal,
+        maxCor = outData01$wiso_subset_cal[[j]][[k]]$max_cal,
         #raw/non corrected data
-        meanRaw = outData01$ciso_subset_cal[[j]][[k]]$mean,
-        minRaw = outData01$ciso_subset_cal[[j]][[k]]$min,
-        maxRaw = outData01$ciso_subset_cal[[j]][[k]]$max,
-        variRaw = outData01$ciso_subset_cal[[j]][[k]]$vari,
-        timeBgn = outData01$ciso_subset_cal[[j]][[k]]$timeBgn,
-        timeEnd = outData01$ciso_subset_cal[[j]][[k]]$timeEnd
+        meanRaw = outData01$wiso_subset_cal[[j]][[k]]$mean,
+        minRaw = outData01$wiso_subset_cal[[j]][[k]]$min,
+        maxRaw = outData01$wiso_subset_cal[[j]][[k]]$max,
+        variRaw = outData01$wiso_subset_cal[[j]][[k]]$vari,
+        timeBgn = outData01$wiso_subset_cal[[j]][[k]]$timeBgn,
+        timeEnd = outData01$wiso_subset_cal[[j]][[k]]$timeEnd
       )
       #replace NA value with NaN
       tmpData[is.na(tmpData)] <- NaN
-      #outData$ciso_subset_cal[[j]][[k]] <-  cbind(outData01$ciso_subset_cal[[j]][[k]], 
-      #                                           outData02$ciso_subset_cal[[j]][[k]][,-which(names(outData02$ciso_subset_cal[[j]][[k]]) %in% c("timeBgn", "timeEnd", "mean", "vari", "numSamp"))])
-      outData$ciso_subset_cal[[j]][[k]] <- tmpData
+      
+      outData$wiso_subset_cal[[j]][[k]] <- tmpData
     }
     else{
       #rearrange timeBgn & timeEnd to last column (NEON format)
-      outData$ciso_subset_cal[[j]][[k]] <- cbind(outData01$ciso_subset_cal[[j]][[k]][,-which(names(outData01$ciso_subset_cal[[j]][[k]]) %in% c("timeBgn", "timeEnd"))],
-                                                 timeBgn = outData01$ciso_subset_cal[[j]][[k]]$timeBgn, 
-                                                 timeEnd = outData01$ciso_subset_cal[[j]][[k]]$timeEnd)
+      outData$wiso_subset_cal[[j]][[k]] <- cbind(outData01$wiso_subset_cal[[j]][[k]][,-which(names(outData01$wiso_subset_cal[[j]][[k]]) %in% c("timeBgn", "timeEnd"))],
+                                                 timeBgn = outData01$wiso_subset_cal[[j]][[k]]$timeBgn, 
+                                                 timeEnd = outData01$wiso_subset_cal[[j]][[k]]$timeEnd)
     }#end else
   }
-  names(outData$ciso_subset_cal[[j]]) <- names(outData01$ciso_subset_cal[[j]])
+  names(outData$wiso_subset_cal[[j]]) <- names(outData01$wiso_subset_cal[[j]])
 }
 
 #create a new cal_df table for each calibration method
-outData$cal_df_Bowl <- cbind(outData01$cal_df[,-which(names(outData01$cal_df) %in% c("timeBgn", "timeEnd"))],
+outData$cal_df <- cbind(outData01$cal_df[,-which(names(outData01$cal_df) %in% c("timeBgn", "timeEnd"))],
                              timeBgn = outData01$cal_df$timeBgn, 
                              timeEnd = outData01$cal_df$timeEnd)
-outData$cal_df_LinReg <- cbind(outData02$cal_df[,-which(names(outData02$cal_df) %in% c("timeBgn", "timeEnd"))],
-                               timeBgn = outData01$cal_df$timeBgn, 
-                               timeEnd = outData01$cal_df$timeEnd)#there was an issue of time output from this method
 
 #change column names to NEON terms
-colnames(outData$cal_df_Bowl) <- c("slp12C", "ofst12C", "rsq12C", "cvLoo12C", "cv5Mae12C", "cv5Rmse12C",
-                                   "slp13C", "ofst13C", "rsq13C", "cvLoo13C", "cv5Mae13C", "cv5Rmse13C",
+colnames(outData$cal_df) <- c("slp18O", "ofst18O", "rsq18O", "cvLoo18O", "cv5Mae18O", "cv5Rmse18O",
+                                   "slp2H", "ofst2H", "rsq2H", "cvLoo2H", "cv5Mae2H", "cv5Rmse2H",
                                    "timeBgn", "timeEnd")
-
-colnames(outData$cal_df_LinReg) <- c("slpDlta13CCo2", "ofstDlta13CCo2", "rsqDlta13CCo2", "cvLooDlta13CCo2", "cv5MaeDlta13CCo2", "cv5RmseDlta13CCo2",
-                                     "slpRtioMoleDryCo2", "ofstRtioMoleDryCo2", "rsqRtioMoleDryCo2", "cvLooRtioMoleDryCo2", "cv5MaeRtioMoleDryCo2", "cv5RmseRtioMoleDryCo2",
-                                     "timeBgn", "timeEnd")
 
 #grab center day data
 rlog$info(paste0("Grabing ", dateCntr, " data"))
