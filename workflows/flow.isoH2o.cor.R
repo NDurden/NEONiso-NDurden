@@ -420,29 +420,29 @@ timeBgn <- base::as.POSIXct(paste(dateCntr, " ", "00:00:00.0001", sep=""), forma
 timeEnd   <- base::as.POSIXct(paste(dateCntr, " ", "23:59:59.950", sep=""), format="%Y-%m-%d %H:%M:%OS", tz="UTC")
 
 #convert NEON time to POSIXct
-for (i in c("cal_df_Bowl", "cal_df_LinReg")){
-  #adding 1st column with NA when number of row = 0
-  if(nrow(dataDateCntr[[i]]) == 0){
-    dataDateCntr[[i]][1,] <- rep(NA, ncol(dataDateCntr[[i]]))
-  } else{
-    dataDateCntr[[i]] <- dataDateCntr[[i]]
-  }
-  
-  #replacing timeBgn and timeEnd when all values in dataframe are NA (timeBgn and timeEnd = "NA-NA-NATNA:NA:NA")
-  if(all(is.na((dataDateCntr[[i]][,-which(names(dataDateCntr[[i]]) %in% c("timeBgn", "timeEnd"))])))){
-    dataDateCntr[[i]]$timeBgn <- paste0(dateCntr, "T00:00:00.000Z")
-    dataDateCntr[[i]]$timeEnd <- paste0(dateCntr, "T23:59:59.000Z")
-  } else{
-    dataDateCntr[[i]]$timeBgn <- as.POSIXct(paste(dataDateCntr[[i]]$timeBgn, " ", "00:00:00.00", sep=""), format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC", origin = "1970-01-01 00:00:00")
-    dataDateCntr[[i]]$timeBgn <- base::as.POSIXct(paste(dataDateCntr[[i]]$timeBgn, " ", "00:00:00.001", sep=""), format="%Y-%m-%d %H:%M:%OS", tz="UTC")
-    dataDateCntr[[i]]$timeEnd <- as.POSIXct(dataDateCntr[[i]]$timeEnd, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC", origin = "1970-01-01 00:00:00")
-    #subset center day data for cal_df table
-    dataDateCntr[[i]] <- dataDateCntr[[i]][which(dataDateCntr[[i]]$timeEnd >= timeBgn & dataDateCntr[[i]]$timeBgn <= timeEnd),]
-    #convert time back to NEON hdf5 time
-    dataDateCntr[[i]]$timeBgn <- NEONiso:::convert_POSIXct_to_NEONhdf5_time(dataDateCntr[[i]]$timeBgn)
-    dataDateCntr[[i]]$timeEnd <- NEONiso:::convert_POSIXct_to_NEONhdf5_time(dataDateCntr[[i]]$timeEnd)
-  }#end if
-}#end loop i
+
+#adding 1st column with NA when number of row = 0
+if(nrow(dataDateCntr$cal_df) == 0){
+  dataDateCntr$cal_df[1,] <- rep(NA, ncol(dataDateCntr$cal_df))
+} else{
+  dataDateCntr$cal_df <- dataDateCntr$cal_df
+}
+
+#replacing timeBgn and timeEnd when all values in dataframe are NA (timeBgn and timeEnd = "NA-NA-NATNA:NA:NA")
+if(all(is.na((dataDateCntr$cal_df[,-which(names(dataDateCntr$cal_df) %in% c("timeBgn", "timeEnd"))])))){
+  dataDateCntr$cal_df$timeBgn <- paste0(dateCntr, "T00:00:00.000Z")
+  dataDateCntr$cal_df$timeEnd <- paste0(dateCntr, "T23:59:59.000Z")
+} else{
+  dataDateCntr$cal_df$timeBgn <- as.POSIXct(paste(dataDateCntr$cal_df$timeBgn, " ", "00:00:00.00", sep=""), format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC", origin = "1970-01-01 00:00:00")
+  dataDateCntr$cal_df$timeBgn <- base::as.POSIXct(paste(dataDateCntr$cal_df$timeBgn, " ", "00:00:00.001", sep=""), format="%Y-%m-%d %H:%M:%OS", tz="UTC")
+  dataDateCntr$cal_df$timeEnd <- as.POSIXct(dataDateCntr$cal_df$timeEnd, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC", origin = "1970-01-01 00:00:00")
+  #subset center day data for cal_df table
+  dataDateCntr$cal_df <- dataDateCntr$cal_df[which(dataDateCntr$cal_df$timeEnd >= timeBgn & dataDateCntr$cal_df$timeBgn <= timeEnd),]
+  #convert time back to NEON hdf5 time
+  dataDateCntr$cal_df$timeBgn <- NEONiso:::convert_POSIXct_to_NEONhdf5_time(dataDateCntr$cal_df$timeBgn)
+  dataDateCntr$cal_df$timeEnd <- NEONiso:::convert_POSIXct_to_NEONhdf5_time(dataDateCntr$cal_df$timeEnd)
+}#end if
+
 
 
 #subset center day data for ciso_subset_cal
@@ -482,14 +482,14 @@ data$Expd <- eddy4R.base::def.hdf5.extr(FileInp = Para$FileName$EcseExpd)
 #extract data from basic hdf5 file for the center day
 data$Basc <- eddy4R.base::def.hdf5.extr(FileInp = Para$FileName$EcseBasc)
 
-#replace isoCo2 calibrate data
-for(j in names(dataDateCntr$ciso_subset_cal)) {
-  for (k in c("dlta13CCo2", "rtioMoleDryCo2")){
-    var <- paste0("/",Para$Flow$Loc, "/dp01/data/isoCo2","/",j,"/",k)
-    data$Expd$listData[[var]] <- dataDateCntr$ciso_subset_cal[[j]][[k]]
-    data$Basc$listData[[var]] <- dataDateCntr$ciso_subset_cal[[j]][[k]]
+#replace isoH2o calibrate data
+for(j in names(dataDateCntr$wiso_subset_cal)) {
+  for (k in c("dlta18OH2o", "dlta2HH2o")){
+    var <- paste0("/",Para$Flow$Loc, "/dp01/data/isoH2o","/",j,"/",k)
+    data$Expd$listData[[var]] <- dataDateCntr$wiso_subset_cal[[j]][[k]]
+    data$Basc$listData[[var]] <- dataDateCntr$wiso_subset_cal[[j]][[k]]
     #report only mean, min, max, vari, and numSamp (results from Bowling method in this case) for basic file
-    data$Basc$listData[[var]] <- dataDateCntr$ciso_subset_cal[[j]][[k]][,which(names(dataDateCntr$ciso_subset_cal[[j]][[k]]) %in% c("mean", "min", "max", "vari","numSamp","timeBgn", "timeEnd"))]
+    data$Basc$listData[[var]] <- dataDateCntr$wiso_subset_cal[[j]][[k]][,which(names(dataDateCntr$wiso_subset_cal[[j]][[k]]) %in% c("mean", "min", "max", "vari","numSamp","timeBgn", "timeEnd"))]
     
     #unit re-assignment (only expanded files)
     if(k %in% c("dlta13CCo2")){
