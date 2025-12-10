@@ -492,21 +492,12 @@ for(j in names(dataDateCntr$wiso_subset_cal)) {
     data$Basc$listData[[var]] <- dataDateCntr$wiso_subset_cal[[j]][[k]][,which(names(dataDateCntr$wiso_subset_cal[[j]][[k]]) %in% c("mean", "min", "max", "vari","numSamp","timeBgn", "timeEnd"))]
     
     #unit re-assignment (only expanded files)
-    if(k %in% c("dlta13CCo2")){
-      #mean,min,max,vari,numSamp,
-      #meanCorBowl,minCorBowl,maxCorBowl,cvCalUcrt,looCalUcrt,
-      #meanCorLinReg,minCorLinReg,maxCorLinReg,cvLoo,cv5Rmse,cv5Mae,
-      #meanRaw,minRaw,maxRaw,variRaw,timeBgn,timeEnd
-      data$Expd$listAttr[[var]]$unit <-c("permill","permill","permill","permill2","NA",
-                                         "permill","permill","permill", "permill2", "permill2",
-                                         "permill","permill","permill", "permill2", "permill2","permill2",
-                                         "permill","permill","permill","permill2","NA","NA")
-    } else {
-      data$Expd$listAttr[[var]]$unit <-c("umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1","umol2Co2 mol-2","NA",
-                                         "umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1", "umol2Co2 mol-2", "umol2Co2 mol-2",
-                                         "umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1", "umol2Co2 mol-2", "umol2Co2 mol-2","umol2Co2 mol-2",
-                                         "umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1","umol2Co2 mol-2","NA","NA") 
-    }
+    #mean,min,max,vari,numSamp,
+    #meanCor,minCor,maxCor,
+    #meanRaw,minRaw,maxRaw,variRaw,timeBgn,timeEnd
+    data$Expd$listAttr[[var]]$unit <-c("permill","permill","permill","permill2","NA",
+                                       "permill","permill","permill", 
+                                       "permill","permill","permill","permill2","NA","NA")
     
   }#end k loop
 }#end j loop
@@ -526,66 +517,28 @@ rlog$info("Writing calibration parameters...")
 
 for (packIdx in c("expanded.h5", "basic.h5")){
   outname <- base::paste0(Para$Flow$DirOut,"/",Para$Flow$FileOutBase, ".", dateCntr, ".", packIdx)  
-  rhdf5::h5createGroup(outname,base::paste0("/",Para$Flow$Loc, "/dp01/data/isoCo2/calData"))
+  rhdf5::h5createGroup(outname,base::paste0("/",Para$Flow$Loc, "/dp01/data/isoH2o/calData"))
   
   fid <- rhdf5::H5Fopen(outname)
-  calLoc <- rhdf5::H5Gopen(fid, paste0("/", Para$Flow$Loc, "/dp01/data/isoCo2/calData"))
+  calLoc <- rhdf5::H5Gopen(fid, paste0("/", Para$Flow$Loc, "/dp01/data/isoH2o/calData"))
   
-  if (packIdx %in% c("expanded.h5")) {
-    #writing calibration parameter for Bowling method
-    rhdf5::h5writeDataset(obj = dataDateCntr$cal_df_Bowl,
-                          h5loc = calLoc,
-                          name = "calDataBowl",
-                          DataFrameAsCompound = TRUE)
-    #writing units
-    #slp12C, ofst12C, rsq12C, cvLoo12C, cv5Mae12C, cv5Rmse12C,
-    #slp13C, ofst13C, rsq13C, cvLoo13C, cv5Mae13C, cv5Rmse13C,
-    #timeBgn", "timeEnd"
-    #using NA for now; need to update
-    unitBowl <- c("NA", "umolCo2 mol-1", "NA", "umolCo2 mol-1", "umolCo2 mol-1", "umolCo2 mol-1",
-                  "NA", "umolCo2 mol-1", "NA", "umolCo2 mol-1", "umolCo2 mol-1", "umolCo2 mol-1",
-                  "NA", "NA")
-    
-    #open calDataBowl dataframe
-    calLocBowl <- rhdf5::H5Dopen(calLoc, "calDataBowl")
-    rhdf5::h5writeAttribute(unitBowl, h5obj = calLocBowl, name = "unit")
-    
-    #writing calibration parameter for LinReg method
-    rhdf5::h5writeDataset(obj = dataDateCntr$cal_df_LinReg,
-                          h5loc = calLoc,
-                          name = "calDataLinReg",
-                          DataFrameAsCompound = TRUE)
-    #writing units
-    #slpDlta13CCo2, ofstDlta13CCo2, rsqDlta13CCo2, cvLooDlta13CCo2, cv5MaeDlta13CCo2, cv5RmseDlta13CCo2,
-    #slpRtioMoleDryCo2, ofstRtioMoleDryCo2, rsqRtioMoleDryCo2, cvLooRtioMoleDryCo2, cv5MaeRtioMoleDryCo2, cv5RmseRtioMoleDryCo2,
-    #timeBgn, timeEnd
-    #using NA for now; need to update
-    unitLinReg <- c("NA", "permill", "NA", "permill", "permill", "permill",
-                    "NA", "umolCo2 mol-1", "NA", "umolCo2 mol-1", "umolCo2 mol-1", "umolCo2 mol-1",
-                    "NA", "NA")
-    
-    #open calDataLinReg dataframe
-    calLocLinReg <- rhdf5::H5Dopen(calLoc, "calDataLinReg")
-    rhdf5::h5writeAttribute(unitLinReg, h5obj = calLocLinReg, name = "unit")
-    
-  } else if (packIdx %in% c("basic.h5")) {
-    rhdf5::h5writeDataset(obj = dataDateCntr$cal_df_Bowl,
-                          h5loc = calLoc,
-                          name = "calDataBowl",
-                          DataFrameAsCompound = TRUE)
-    #writing units
-    #slp12C, ofst12C, rsq12C, cvLoo12C, cv5Mae12C, cv5Rmse12C,
-    #slp13C, ofst13C, rsq13C, cvLoo13C, cv5Mae13C, cv5Rmse13C,
-    #timeBgn", "timeEnd"
-    #using NA for now; need to update
-    unitBowl <- c("NA", "umolCo2 mol-1", "NA", "umolCo2 mol-1", "umolCo2 mol-1", "umolCo2 mol-1",
-                  "NA", "umolCo2 mol-1", "NA", "umolCo2 mol-1", "umolCo2 mol-1", "umolCo2 mol-1",
-                  "NA", "NA")
-    
-    #open calDataBowl dataframe
-    calLocBowl <- rhdf5::H5Dopen(calLoc, "calDataBowl")
-    rhdf5::h5writeAttribute(unitBowl, h5obj = calLocBowl, name = "unit")
-  }
+  rhdf5::h5writeDataset(obj = dataDateCntr$cal_df_Bowl,
+                        h5loc = calLoc,
+                        name = "calData",
+                        DataFrameAsCompound = TRUE)
+  #writing units
+  #"slp18O", "ofst18O", "rsq18O", "cvLoo18O", "cv5Mae18O", "cv5Rmse18O",
+  #slp2H, "ofst2H", "rsq2H", "cvLoo2H", "cv5Mae2H", "cv5Rmse2H"
+  #timeBgn", "timeEnd"
+  #using NA for now; need to update
+  unitCal <- c("NA", "permill", "NA", "permill", "permill", "permill",
+                "NA", "permill", "NA", "permill", "permill", "permill",
+                "NA", "NA")
+  
+  #open calDataBowl dataframe
+  calLocBowl <- rhdf5::H5Dopen(calLoc, "calData")
+  rhdf5::h5writeAttribute(unitCal, h5obj = calLocBowl, name = "unit")
+  
   
   rhdf5::H5Gclose(calLoc)
   
@@ -603,18 +556,16 @@ if (Para$Flow$Meth == "dflt") {
   # create directory
   dir.create(paste0(Para$Flow$DirOut, "/", Para$Flow$Loc, "/", Para$Flow$VersDp), showWarnings = FALSE, recursive = TRUE)
   
-  for(j in names(dataDateCntr$ciso_subset_cal)) {
-    for (k in c("dlta13CCo2", "rtioMoleDryCo2")){
-      var <- paste0("/",Para$Flow$Loc, "/dp01/data/isoCo2","/",j,"/",k)
+  for(j in names(dataDateCntr$wiso_subset_cal)) {
+    for (k in c("dlta18OH2o", "dlta2HH2o")){
+      var <- paste0("/",Para$Flow$Loc, "/dp01/data/isoH2o","/",j,"/",k)
       
       #write to file
-      utils::write.csv(data$Expd$listData[[var]], file = paste0(Para$Flow$DirOut, "/", Para$Flow$Loc, "/", Para$Flow$VersDp, "/", "dp01", "-", "isoCo2", "-",j, "-",k,".csv"), col.names = FALSE,
+      utils::write.csv(data$Expd$listData[[var]], file = paste0(Para$Flow$DirOut, "/", Para$Flow$Loc, "/", Para$Flow$VersDp, "/", "dp01", "-", "isoH2o", "-",j, "-",k,".csv"), col.names = FALSE,
                        na = "NaN", row.names = FALSE, quote=FALSE)
     }}
   #write calibration parameter
-  utils::write.csv(dataDateCntr$cal_df_Bowl, file = paste0(Para$Flow$DirOut, "/", Para$Flow$Loc, "/", Para$Flow$VersDp, "/", "cal-df-Bowl.csv"), col.names = FALSE,
-                   na = "NaN", row.names = FALSE, quote=FALSE)
-  utils::write.csv(dataDateCntr$cal_df_LinReg, file = paste0(Para$Flow$DirOut, "/", Para$Flow$Loc, "/", Para$Flow$VersDp, "/", "cal-df-LinReg.csv"), col.names = FALSE,
+  utils::write.csv(dataDateCntr$cal_df, file = paste0(Para$Flow$DirOut, "/", Para$Flow$Loc, "/", Para$Flow$VersDp, "/", "cal_df.csv"), col.names = FALSE,
                    na = "NaN", row.names = FALSE, quote=FALSE)
   
 }#end creating CSV file
