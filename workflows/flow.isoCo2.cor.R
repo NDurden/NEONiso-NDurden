@@ -30,26 +30,46 @@
 #     adjusted workflow to be able to run a gold file
 #   Natchaya Pingintha-Durden (2023-08-31)
 #     updated new input and output file name base
-#   Natchaya Pingintha-Durden (2023-09-15)
-#     added minimum observation (min_nobs) parameter
+#   Natchaya Pingintha-Durden (2023 -09-26)
+#     updated NEONiso::calibrate_carbon function to version to 0.6.4
+#   Natchaya Pingintha-Durden (2023-12-22)
+#     set remove_known_bad_months in NEONiso to FALSE
+#     set calibration_half_width in NEONiso to 1
+#   Natchaya Pingintha-Durden (2026-08-24)
+#     adding raw dlta13CCo2 and rtioMoleDryCo2 data to basic file
+#   Natchaya Pingintha-Durden (2026-09-04)
+#     Adding a condition to generate a dataframe with NaN values 
+#     when dataframe from some measurement levels are missing.
 ##############################################################################################
 # clean workspace
 # rm(list=ls())
 
 # clean console
 # cat("\014")
+
+#######################################################################
+# test the latest neonIso package and neonUtilities v2.4.1.9000
+# install.packages("remotes")
+# install.packages("remotes")
+# 
+# remotes::install_github(
+#   "NEONScience/NEON-utilities",
+#   ref = "v2.4.1.9000",
+#   subdir = "neonUtilities"
+# )
+# devtools::install_github("lanl/NEONiso@v0.8.0") 
+#########################################################################
+
+library(eddy4R.base)
+
 # Start logging
 logLevel <- Sys.getenv('LOG_LEVEL')
-if (is.null(logLevel) || logLevel == "") {
-  assign("rlog", eddy4R.base::def.log.init(Lvl="debug"), envir = .GlobalEnv)
-} else {
-  assign("rlog", eddy4R.base::def.log.init(), envir = .GlobalEnv)
-}
+rlog <- Logger.Singleton$new(logging_level = logLevel) #class defined in eddy4R.base
 rlog$info("Start ECSE CO2 isotope correction from flow.isoCo2.cor.R")
 
 
 # check if require packages are installed 
-packReq <- c("NEONiso", "parsedate", "Hmisc", "neonUtilities", "dplyr", "tidyr")
+packReq <- c("neonUtilities","NEONiso", "parsedate", "Hmisc" , "dplyr", "tidyr")
 
 lapply(packReq, function(x) {
   tryCatch({rlog$debug(x)}, error=function(cond){print(x)})
@@ -124,15 +144,15 @@ if(Para$Flow$Meth == "slct") {
   
   # user-customizeable access to input and output data directories
   Para$Flow$DirUsr <- c(
-    nd = "/eddy/data/iso/ABBY",
+    nd = "/eddy/data/ABBY",
     dd = "/eddy/data/tmp"
   )["nd"]
   # for a detailed description of all default workflow parameters see ?eddy4R.base::def.para.flow.ecte, section Overview of workflow parameters
-  Para$Flow$DateOut <- base::as.character(base::as.Date(base::as.character(20220506:20220506), format = "%Y%m%d"))[1:1]
-  Para$Flow$DirInp <- base::paste0("/home/", base::Sys.getenv("USER"), Para$Flow$DirUsr, "/inp")
+  Para$Flow$DateOut <- base::as.character(base::as.Date(base::as.character(20240724:20240724), format = "%Y%m%d"))[1:1]
+  Para$Flow$DirInp <- base::paste0("/home/", base::Sys.getenv("USER"), Para$Flow$DirUsr, "/out")
   Para$Flow$DirMnt <- base::paste0("/home/", Sys.getenv("USER"), "/eddy")
-  Para$Flow$DirOut <- base::paste0("/home/", Sys.getenv("USER"), Para$Flow$DirUsr, "/out")
-  Para$Flow$DirTmp <- base::paste0("/home/", Sys.getenv("USER"), "/eddy/tmp")
+  Para$Flow$DirOut <- base::paste0("/home/", Sys.getenv("USER"), Para$Flow$DirUsr, "/out01")
+  Para$Flow$DirTmp <- NA #base::paste0("/home/", Sys.getenv("USER"), "/eddy/tmp")
   Para$Flow$DirWrk <- NA
   Para$Flow$FileInp <- base::dir(Para$Flow$DirInp, pattern = "*.h5")
   Para$Flow$FileOutBase <- c("NEON.D16.ABBY.IP4.00200.001.ecse")
@@ -153,7 +173,7 @@ if(Para$Flow$Meth == "slct") {
 # collect, and check for presence and absence of workflow parameters, create and set directories, and download reference data (if applicable)
 Para$Flow <- eddy4R.base::def.para.flow.ecte(ParaFlow = Para$Flow,
                                              UrlInpRefe = "https://storage.googleapis.com/neon-ec-goldfiles/EC-iso-cor/inpRefeIsoCor_20230831.zip",
-                                             UrlOutRefe = "https://storage.googleapis.com/neon-ec-goldfiles/EC-iso-cor/outRefeIsoCor_20230831.zip")
+                                             UrlOutRefe = "https://storage.googleapis.com/neon-ec-goldfiles/EC-iso-cor/outRefeIsoCor_20260824.zip")
 #update some parameter if Para$Flow$Meth == "dflt"
 if (Para$Flow$Meth == "dflt") {
   Para$Flow$FileOutBase <- c("NEON.D06.KONZ.IP4.00200.001.ecse")
@@ -161,7 +181,7 @@ if (Para$Flow$Meth == "dflt") {
 
 
 # INITIAL CHECKS ###############################################################
-
+rlog$info("Initial Checks")
 # check if number of input files (Para$Flow$FileInp) cover calculation window (Para$Flow$PrdWndwCalc)
 # i.e. if Para$Flow$PrdWndwCalc is equal to 7, Para$Flow$FileInp should be equal to 7 files
 if(Para$Flow$PrdWndwCalc > base::length(Para$Flow$FileInp)) {
@@ -217,17 +237,40 @@ if(!dateCalcBasc[[dateCntr]]) {
   stop(msg)
 }
 # Processing ###################################################################
+rlog$info("Begin to read-in data")
 # determine full input file path for current center day in data processing window
 # this day is used as reference for reading parametric information
 # Expanded file path
 Para$FileName$EcseExpd <- base::file.path(Para$Flow$DirInp, grep(pattern = paste0("ecse.*", Para$Flow$DateOut ,".*expanded.h5"), Para$Flow$FileInp, value = TRUE))
 #DirFilePara <- base::file.path(Para$Flow$DirInp, grep(pattern = base::paste0(".*", dateCntr, ".*.h5?"), Para$Flow$FileInp, value = TRUE))
 
-# Basic file path
+#Basic file path
 Para$FileName$EcseBasc <- base::file.path(Para$Flow$DirInp, grep(pattern = paste0("ecse.*",Para$Flow$DateOut ,".*basic.h5"), Para$Flow$FileInp, value = TRUE))
 
-# Grab the NEON specific 4-letter code for the site location (Loc) from the input file
+#################################################################################################
+#Check if NEONiso output already present in files
+#################################################################################################
+listObjExpd <- rhdf5::h5ls(Para$FileName$EcseExpd)
+listObjBasc <- rhdf5::h5ls(Para$FileName$EcseBasc)
+ObjExstExpd <- any(grepl(pattern = "dp01/data/isoCo2/calData", x = listObjExpd$group))
+ObjExstBasc <- any(grepl(pattern = "dp01/data/isoCo2/calData", x = listObjBasc$group))
+if(ObjExstExpd){
+  #Provide error message
+  rlog$error("NEONiso calData already output to Expanded file")
+  #Interupt workflow
+  rlang::interrupt()}
+if(ObjExstBasc){
+  #Provide error message
+  rlog$error("NEONiso calData already output to Basic file")
+  #Interupt workflow
+  rlang::interrupt()}
+#################################################################################################
+
+#Grab the NEON specific 4-letter code for the site location (Loc) from the input file
 Para$Flow$Loc <- eddy4R.base::def.para.site(FileInp = Para$FileName$EcseExpd)$Loc
+
+#get level of tower
+Para$Flow$LvlTowr <- eddy4R.base::def.para.site(FileInp = Para$FileName$EcseExpd)$LvlTowr
 
 #In this case, expanded files will be used in calculation
 #list all file names in inpDir
@@ -236,27 +279,114 @@ nameFile <- list.files(path = Para$Flow$DirInp,
                        recursive = TRUE,
                        full.names = TRUE)
 
-#correction processing
-#correcting data using Bowling_2003 method
-outData01 <- NEONiso::calibrate_carbon(inname = nameFile, site = Para$Flow$Loc, method = "Bowling_2003", write_to_file = FALSE, avg = 6, min_nobs = 130)
-#if the modified calibrate_carbon() has not imported yet, run calibrate_carbon() line by line by using varibles setting at the end of this work flow
-#Then run;
-#outData01 <- outData
+#check if all isoCo2 input data is NaN
+rlog$info("Initial Checks if all data are missing and during measuring period and/or validation period")
+inpTmp <- neonUtilities::stackEddy(filepath = nameFile, avg = 6, level = "dp01",var = "isoCo2",useFasttime = TRUE, runLocal = TRUE)[[1]]
 
+#define variables
+#LvlTowr and validation periods
+varLvlTowr <- paste0(Para$Flow$LvlTowr,"_06m")
+varLvlVali <- paste0(c("co2Low", "co2Med", "co2High"), "_06m")
 
-#correcting data using Linear regression (linreg) method
-#NOTE: values of min, max output from linreg method are the corrected values not raw values
-outData02 <- NEONiso::calibrate_carbon(inname = nameFile, site=Para$Flow$Loc, method = "linreg", write_to_file = FALSE, avg = 6, min_nobs = 130)
-#if the modified calibrate_carbon() has not imported yet, run calibrate_carbon() line by line by using varibles setting at the end of this work flow
-#Then run;
-#outData02 <- outData
+#create tempdir if Para$Flow$DirTmp was not provided
+if(is.na(Para$Flow$DirTmp)) Para$Flow$DirTmp <- tempdir()
+#check if there are validation periods
+valiTrue <- inpTmp$verticalPosition %in% c("co2High", "co2Low", "co2Med")
 
+#creating empty outData01 and outData02 when there are no data in inpTmp or no data in validation periods
+if (nrow(inpTmp) == 0 || !any(valiTrue)){
+  #download reference data
+  rlog$info("Fail to perform correction due to missing due to no available data during measuring period and/or validation period")
+  rlog$info("Downloding the golden file...")
+  # reference input files
+  eddy4R.base::def.dld.zip(Inp = list(Url = "https://storage.googleapis.com/neon-ec-goldfiles/EC-iso-cor/inpRefeIsoCor_20230831.zip", 
+                                      Dir =  Para$Flow$DirTmp))
+  nameFileTmp <- list.files(path = Para$Flow$DirTmp,
+                            pattern = "2018-11-28.expanded.h5",
+                            recursive = TRUE,
+                            full.names = TRUE)
+  rlog$info(nameFileTmp)
+  
+  #correcting data using Bowling_2003 method
+  rlog$info("Golden File: Correcting data using Bowling_2003 method")
+  outDataTmp01 <- NEONiso::calibrate_carbon(inname = nameFileTmp, site = "KONZ", method = "gainoffset", remove_known_bad_months = FALSE, calibration_half_width = 1, write_to_file = FALSE, avg = 6, min_nobs = 130)
+  #correcting data using Linear regression (linreg) method
+  rlog$info("Golden File: Correcting data using Linear regression method")
+  outDataTmp02 <- NEONiso::calibrate_carbon(inname = nameFileTmp, site= "KONZ" , method = "linreg", remove_known_bad_months = FALSE, calibration_half_width = 1, write_to_file = FALSE, avg = 6, min_nobs = 130)
+  
+  outData01 <- list()
+  outData02 <- list()
+  #creating empty dataframe for each measurement level from the reference file
+  for(j in varLvlTowr) {
+    for (k in names(outDataTmp01$ciso_subset_cal$`000_010_06m`)){
+      outData01$ciso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp01$ciso_subset_cal$`000_010_06m`[[k]]),
+                                                               nrow=0, 
+                                                               dimnames=list(NULL, names(outDataTmp01$ciso_subset_cal$`000_010_06m`[[k]]))))
+      outData02$ciso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp02$ciso_subset_cal$`000_010_06m`[[k]]),
+                                                               nrow=0, 
+                                                               dimnames=list(NULL, names(outDataTmp02$ciso_subset_cal$`000_010_06m`[[k]]))))
+    }}
+  #creating empty dataframe for each validation period from the reference file
+  for(j in varLvlVali) {
+    for (k in names(outDataTmp01$ciso_subset_cal$co2High_06m)){
+      outData01$ciso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp01$ciso_subset_cal[[j]][[k]]),
+                                                               nrow=0, 
+                                                               dimnames=list(NULL, names(outDataTmp01$ciso_subset_cal[[j]][[k]]))))
+      outData02$ciso_subset_cal[[j]][[k]] <- data.frame(matrix(ncol=ncol(outDataTmp02$ciso_subset_cal[[j]][[k]]),
+                                                               nrow=0, 
+                                                               dimnames=list(NULL, names(outDataTmp02$ciso_subset_cal[[j]][[k]]))))
+    }}
+  #add calibration data.frame
+  outData01$cal_df <- outDataTmp01$cal_df
+  outData02$cal_df <- outDataTmp02$cal_df
+  outData01$cal_df[1,] <- rep(NA, ncol(outData01$cal_df))
+  outData02$cal_df[1,] <- rep(NA, ncol(outData02$cal_df))
+  
+  #remove unused table
+  rm(outDataTmp01, outDataTmp02, nameFileTmp)
+  
+} else {
+  rlog$info("Starting data correction...")
+  #correction processing
+  #correcting data using Bowling_2003 method
+  rlog$info("Correcting data using Bowling_2003 method")
+  outData01 <- NEONiso::calibrate_carbon(inname = nameFile, site = Para$Flow$Loc, method = "gainoffset", remove_known_bad_months = FALSE, calibration_half_width = 1, write_to_file = FALSE, avg = 6, min_nobs = 130)
+  #if the modified calibrate_carbon() has not imported yet, run calibrate_carbon() line by line by using varibles setting at the end of this work flow
+  #Then run;
+  #outData01 <- outData
+  
+  
+  #correcting data using Linear regression (linreg) method
+  #NOTE: values of min, max output from linreg method are the corrected values not raw values
+  rlog$info("Correcting data using  Linear regression method")
+  outData02 <- NEONiso::calibrate_carbon(inname = nameFile, site=Para$Flow$Loc, method = "linreg", remove_known_bad_months = FALSE, calibration_half_width = 1, write_to_file = FALSE, avg = 6, min_nobs = 130)
+  #if the modified calibrate_carbon() has not imported yet, run calibrate_carbon() line by line by using varibles setting at the end of this work flow
+  #Then run;
+  #outData02 <- outData
+}#end else
+rlog$info("Finished data correction...")
 #combine data from both method into one list
 outData <- list()
 
 #adding columns, combine results, clean up, organizing, and changing column names
 for(j in names(outData01$ciso_subset_cal)) {
   for (k in names (outData01$ciso_subset_cal[[j]])){
+    #adding 1st column with NA when number of row = 0
+    #outData01$ciso_subset_cal
+    if(nrow(outData01$ciso_subset_cal[[j]][[k]]) == 0){
+      outData01$ciso_subset_cal[[j]][[k]][1,] <- rep(NA, ncol(outData01$ciso_subset_cal[[j]][[k]]))
+    } else{
+      outData01$ciso_subset_cal[[j]][[k]] <- outData01$ciso_subset_cal[[j]][[k]]
+    }
+    
+    #adding 1st column with NA when number of row = 0
+    #outData02$ciso_subset_cal
+    if(nrow(outData02$ciso_subset_cal[[j]][[k]]) == 0){
+      outData02$ciso_subset_cal[[j]][[k]][1,] <- rep(NA, ncol(outData02$ciso_subset_cal[[j]][[k]]))
+    } else{
+      outData02$ciso_subset_cal[[j]][[k]] <- outData02$ciso_subset_cal[[j]][[k]]
+    }
+    
     if (k %in% c("dlta13CCo2", "rtioMoleDryCo2")){
       
       ######BOOK KEEPING######################################
@@ -331,7 +461,6 @@ outData$cal_df_LinReg <- cbind(outData02$cal_df[,-which(names(outData02$cal_df) 
                                timeBgn = outData01$cal_df$timeBgn, 
                                timeEnd = outData01$cal_df$timeEnd)#there was an issue of time output from this method
 
-
 #change column names to NEON terms
 colnames(outData$cal_df_Bowl) <- c("slp12C", "ofst12C", "rsq12C", "cvLoo12C", "cv5Mae12C", "cv5Rmse12C",
                                    "slp13C", "ofst13C", "rsq13C", "cvLoo13C", "cv5Mae13C", "cv5Rmse13C",
@@ -342,6 +471,7 @@ colnames(outData$cal_df_LinReg) <- c("slpDlta13CCo2", "ofstDlta13CCo2", "rsqDlta
                                      "timeBgn", "timeEnd")
 
 #grab center day data
+rlog$info(paste0("Grabing ", dateCntr, " data"))
 dataDateCntr <- outData
 #get start and end time
 timeBgn <- base::as.POSIXct(paste(dateCntr, " ", "00:00:00.0001", sep=""), format="%Y-%m-%d %H:%M:%OS", tz="UTC")
@@ -349,6 +479,13 @@ timeEnd   <- base::as.POSIXct(paste(dateCntr, " ", "23:59:59.950", sep=""), form
 
 #convert NEON time to POSIXct
 for (i in c("cal_df_Bowl", "cal_df_LinReg")){
+  #adding 1st column with NA when number of row = 0
+  if(nrow(dataDateCntr[[i]]) == 0){
+    dataDateCntr[[i]][1,] <- rep(NA, ncol(dataDateCntr[[i]]))
+  } else{
+    dataDateCntr[[i]] <- dataDateCntr[[i]]
+  }
+  
   #replacing timeBgn and timeEnd when all values in dataframe are NA (timeBgn and timeEnd = "NA-NA-NATNA:NA:NA")
   if(all(is.na((dataDateCntr[[i]][,-which(names(dataDateCntr[[i]]) %in% c("timeBgn", "timeEnd"))])))){
     dataDateCntr[[i]]$timeBgn <- paste0(dateCntr, "T00:00:00.000Z")
@@ -369,6 +506,12 @@ for (i in c("cal_df_Bowl", "cal_df_LinReg")){
 #subset center day data for ciso_subset_cal
 for(j in names(dataDateCntr$ciso_subset_cal)) {
   for (k in names (dataDateCntr$ciso_subset_cal[[j]])){
+    # #adding 1st column with NA when number of row = 0
+    # if(nrow(dataDateCntr$ciso_subset_cal[[j]][[k]]) == 0){
+    #   dataDateCntr$ciso_subset_cal[[j]][[k]][1,] <- rep(NA, ncol( dataDateCntr$ciso_subset_cal[[j]][[k]]))
+    # } else{
+    #   dataDateCntr$ciso_subset_cal[[j]][[k]] <- dataDateCntr$ciso_subset_cal[[j]][[k]]
+    # }
     #replace empty dataframe with NA
     if(all(is.na((dataDateCntr$ciso_subset_cal[[j]][[k]][,-which(names(dataDateCntr$ciso_subset_cal[[j]][[k]]) %in% c("timeBgn", "timeEnd"))])))){
       dataDateCntr$ciso_subset_cal[[j]][[k]]$timeBgn <- paste0(dateCntr, "T00:00:00.000Z")
@@ -386,9 +529,39 @@ for(j in names(dataDateCntr$ciso_subset_cal)) {
   }#end loop k
 }#end loop j
 
+#Add missing measurement levels with NaN data
+missTbl <- setdiff(
+  c(varLvlTowr, varLvlVali),
+  names(dataDateCntr$ciso_subset_cal)
+)
 
+if (length(missTbl) > 0) {
+  
+  #template from first available level
+  tmp01 <- dataDateCntr$ciso_subset_cal[[1]]$dlta13CCo2[1, , drop = FALSE]
+  tmp02 <- dataDateCntr$ciso_subset_cal[[1]]$rtioMoleDryCo2[1, , drop = FALSE]
+  
+  #replace values with NaN
+  tmp01[,] <- NaN
+  tmp02[,] <- NaN
+  
+  #set full-day timestamps
+  tmp01$timeBgn <- paste0(dateCntr, "T00:00:00.000Z")
+  tmp01$timeEnd <- paste0(dateCntr, "T23:59:59.000Z")
+  
+  tmp02$timeBgn <- paste0(dateCntr, "T00:00:00.000Z")
+  tmp02$timeEnd <- paste0(dateCntr, "T23:59:59.000Z")
+  
+  for (var in missTbl) {
+    dataDateCntr$ciso_subset_cal[[var]] <- list(
+      dlta13CCo2 = tmp01,
+      rtioMoleDryCo2 = tmp02
+    )
+  }
+}
 #Writing data to HDF5 ########################################################
 #create list to hold data
+rlog$info("Writing data to HDF5...")
 data <- list()
 
 #extract data from expanded hdf5 file for the center day
@@ -403,7 +576,8 @@ for(j in names(dataDateCntr$ciso_subset_cal)) {
     data$Expd$listData[[var]] <- dataDateCntr$ciso_subset_cal[[j]][[k]]
     data$Basc$listData[[var]] <- dataDateCntr$ciso_subset_cal[[j]][[k]]
     #report only mean, min, max, vari, and numSamp (results from Bowling method in this case) for basic file
-    data$Basc$listData[[var]] <- dataDateCntr$ciso_subset_cal[[j]][[k]][,which(names(dataDateCntr$ciso_subset_cal[[j]][[k]]) %in% c("mean", "min", "max", "vari","numSamp","timeBgn", "timeEnd"))]
+    #adding raw data to basic file
+    data$Basc$listData[[var]] <- dataDateCntr$ciso_subset_cal[[j]][[k]][,which(names(dataDateCntr$ciso_subset_cal[[j]][[k]]) %in% c("mean", "min", "max", "vari","numSamp", "meanRaw", "minRaw", "maxRaw", "variRaw", "timeBgn", "timeEnd"))]
     
     #unit re-assignment (only expanded files)
     if(k %in% c("dlta13CCo2")){
@@ -411,11 +585,19 @@ for(j in names(dataDateCntr$ciso_subset_cal)) {
       #meanCorBowl,minCorBowl,maxCorBowl,cvCalUcrt,looCalUcrt,
       #meanCorLinReg,minCorLinReg,maxCorLinReg,cvLoo,cv5Rmse,cv5Mae,
       #meanRaw,minRaw,maxRaw,variRaw,timeBgn,timeEnd
+      #basic file
+      data$Basc$listAttr[[var]]$unit <-c("permill","permill","permill","permill2","NA",
+                                         "permill","permill","permill","permill2","NA","NA")
+      #expanded file
       data$Expd$listAttr[[var]]$unit <-c("permill","permill","permill","permill2","NA",
                                          "permill","permill","permill", "permill2", "permill2",
                                          "permill","permill","permill", "permill2", "permill2","permill2",
                                          "permill","permill","permill","permill2","NA","NA")
     } else {
+      #basic file
+      data$Basc$listAttr[[var]]$unit <-c("umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1","umol2Co2 mol-2","NA",
+                                         "umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1","umol2Co2 mol-2","NA","NA") 
+      #expanded file
       data$Expd$listAttr[[var]]$unit <-c("umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1","umol2Co2 mol-2","NA",
                                          "umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1", "umol2Co2 mol-2", "umol2Co2 mol-2",
                                          "umolCo2 mol-1","umolCo2 mol-1","umolCo2 mol-1", "umol2Co2 mol-2", "umol2Co2 mol-2","umol2Co2 mol-2",
@@ -436,7 +618,7 @@ tmp <- eddy4R.base::def.hdf5.extr(FileInp = NULL,
 rm(tmp)
 
 #writing calibration parameters
-print("Writing calibration parameters...")
+rlog$info("Writing calibration parameters...")
 
 for (packIdx in c("expanded.h5", "basic.h5")){
   outname <- base::paste0(Para$Flow$DirOut,"/",Para$Flow$FileOutBase, ".", dateCntr, ".", packIdx)  
@@ -532,6 +714,7 @@ if (Para$Flow$Meth == "dflt") {
                    na = "NaN", row.names = FALSE, quote=FALSE)
   
 }#end creating CSV file
+
 
 
 
